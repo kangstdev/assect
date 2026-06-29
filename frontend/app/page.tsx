@@ -1,47 +1,35 @@
 "use client";
 
 import {
-  Bell,
-  CircleHelp,
-  UserCircle,
-  Plus,
-  ArrowDown,
-  ArrowUp,
-  CreditCard,
-  Utensils,
-  Bus,
-  House,
-  ShoppingBag,
-  Film,
-  Briefcase,
-  Gift,
-  Pencil,
-  Trash2,
-  ChevronDown,
-  CalendarDays,
+  Bell, CircleHelp, UserCircle, Plus,
+  ArrowDown, ArrowUp, CreditCard,
+  Utensils, Bus, House, ShoppingBag, Film, Briefcase, Gift,
+  Pencil, Trash2, ChevronDown, CalendarDays,
 } from "lucide-react";
 
-import { useMemo, useState } from "react";
+import { useState, useEffect } from "react";
 import type { Transaction, TransactionType } from "./types/transaction";
 import HomeRight from "@/components/layout/HomeRight";
+import {
+  calcTotalIncome,
+  calcTotalExpense,
+  calcBalance,
+  calcBudgetUsagePercent,
+  calcCategorySummaries,
+  calcDonutGradient,
+} from "@/app/lib/Calculations";
 
 export default function HomePage() {
+
+const MONTHLY_BUDGET = 3000000; // 임시 - 나중에 DB 연결
+
+
   const today = new Date();
   const selectedYear = today.getFullYear();
   const selectedMonth = today.getMonth() + 1;
 
-  const monthlyBudget = 3000000;
-
-  const [transactions, setTransactions] = useState<Transaction[]>([
-    { id: 1, type: "expense", title: "스타벅스", category: "식비", amount: 6500, date: "2026-06-12", payment: "토스카드", memo: "아이스 아메리카노" },
-    { id: 2, type: "expense", title: "카카오T", category: "교통", amount: 12000, date: "2026-06-11", payment: "카카오페이", memo: "택시 이용" },
-    { id: 3, type: "expense", title: "이마트24", category: "식비", amount: 8900, date: "2026-06-10", payment: "토스카드", memo: "간식 구매" },
-    { id: 4, type: "income", title: "(주)좋은회사", category: "월급", amount: 2500000, date: "2026-06-10", payment: "계좌이체", memo: "급여" },
-    { id: 5, type: "expense", title: "SK에너지", category: "주거비", amount: 120000, date: "2026-06-09", payment: "계좌이체", memo: "전기요금" },
-    { id: 6, type: "expense", title: "쿠팡", category: "쇼핑", amount: 34500, date: "2026-06-08", payment: "국민카드", memo: "생활용품 구매" },
-    { id: 7, type: "income", title: "블로그 원고료", category: "기타수입", amount: 150000, date: "2026-06-07", payment: "계좌이체", memo: "원고료 입금" },
-    { id: 8, type: "expense", title: "CGV", category: "문화/여가", amount: 13000, date: "2026-06-06", payment: "토스카드", memo: "영화 관람" },
-  ]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [type, setType] = useState<TransactionType>("expense");
   const [title, setTitle] = useState("");
@@ -51,109 +39,85 @@ export default function HomePage() {
   const [memo, setMemo] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  const totalIncome = useMemo(() =>
-    transactions.filter((i) => i.type === "income").reduce((s, i) => s + i.amount, 0),
-    [transactions]
-  );
+  // ── API 호출 ──────────────────────────────
+  useEffect(() => {
+    fetchTransactions();
+  }, []);
 
-  const totalExpense = useMemo(() =>
-    transactions.filter((i) => i.type === "expense").reduce((s, i) => s + i.amount, 0),
-    [transactions]
-  );
+  const fetchTransactions = async () => {
+  setIsLoading(true);
+  const res = await fetch("/api/transactions");
+  const data = await res.json();
+  setTransactions(Array.isArray(data) ? data : []);
+  setIsLoading(false);
+};
 
-  const balance = totalIncome - totalExpense;
+  // ── 계산 ──────────────────────────────────
+  const totalIncome = calcTotalIncome(transactions);
+  const totalExpense = calcTotalExpense(transactions);
+  const balance = calcBalance(totalIncome, totalExpense);
+  const budgetUsagePercent = calcBudgetUsagePercent(totalExpense, MONTHLY_BUDGET);
+  const categorySummaries = calcCategorySummaries(transactions, totalExpense);
+  const donutGradient = calcDonutGradient(categorySummaries, totalExpense);
 
-  const budgetUsagePercent = useMemo(() =>
-    monthlyBudget === 0 ? 0 : Math.min(100, Math.round((totalExpense / monthlyBudget) * 100)),
-    [totalExpense]
-  );
-
-  const categoryColorList = [
-    { dotClassName: "bg-blue-500", chartColor: "#3b82f6" },
-    { dotClassName: "bg-red-500", chartColor: "#ef4444" },
-    { dotClassName: "bg-amber-500", chartColor: "#f59e0b" },
-    { dotClassName: "bg-green-500", chartColor: "#22c55e" },
-    { dotClassName: "bg-violet-500", chartColor: "#8b5cf6" },
-    { dotClassName: "bg-pink-500", chartColor: "#ec4899" },
-  ];
-
-  const categorySummaries = useMemo(() => {
-    const categoryMap: Record<string, number> = {};
-    transactions
-      .filter((i) => i.type === "expense")
-      .forEach((i) => { categoryMap[i.category] = (categoryMap[i.category] || 0) + i.amount; });
-    return Object.entries(categoryMap)
-      .map(([categoryName, categoryAmount], index) => {
-        const color = categoryColorList[index % categoryColorList.length];
-        return {
-          categoryName,
-          categoryAmount,
-          percent: totalExpense === 0 ? 0 : Math.round((categoryAmount / totalExpense) * 100),
-          dotClassName: color.dotClassName,
-          chartColor: color.chartColor,
-        };
-      })
-      .sort((a, b) => b.categoryAmount - a.categoryAmount);
-  }, [transactions, totalExpense]);
-
-  const donutGradient = useMemo(() => {
-    if (totalExpense === 0 || categorySummaries.length === 0) return "conic-gradient(#e5e7eb 0deg 360deg)";
-    let startDeg = 0;
-    const gradientItems = categorySummaries.map((item) => {
-      const endDeg = startDeg + (item.categoryAmount / totalExpense) * 360;
-      const text = `${item.chartColor} ${startDeg}deg ${endDeg}deg`;
-      startDeg = endDeg;
-      return text;
-    });
-    if (startDeg < 360) gradientItems.push(`#e5e7eb ${startDeg}deg 360deg`);
-    return `conic-gradient(${gradientItems.join(", ")})`;
-  }, [categorySummaries, totalExpense]);
-
+  // ── 유틸 ──────────────────────────────────
   const formatMoney = (value: number) => value.toLocaleString("ko-KR") + "원";
   const formatDate = (value: string) => value;
 
   const getCategoryIcon = (categoryName: string) => {
-    if (categoryName === "식비") return <Utensils size={18} />;
-    if (categoryName === "교통") return <Bus size={18} />;
-    if (categoryName === "주거비") return <House size={18} />;
-    if (categoryName === "쇼핑") return <ShoppingBag size={18} />;
+    if (categoryName === "식비")      return <Utensils size={18} />;
+    if (categoryName === "교통")      return <Bus size={18} />;
+    if (categoryName === "주거비")    return <House size={18} />;
+    if (categoryName === "쇼핑")      return <ShoppingBag size={18} />;
     if (categoryName === "문화/여가") return <Film size={18} />;
-    if (categoryName === "월급") return <Briefcase size={18} />;
-    if (categoryName === "기타수입") return <Gift size={18} />;
+    if (categoryName === "월급")      return <Briefcase size={18} />;
+    if (categoryName === "기타수입")  return <Gift size={18} />;
     return <CreditCard size={18} />;
   };
 
+  // ── 핸들러 ────────────────────────────────
   const resetAddForm = () => {
     setType("expense"); setTitle(""); setCategory(""); setAmount(""); setPayment(""); setMemo("");
   };
 
   const handleCloseAddModal = () => { resetAddForm(); setIsAddModalOpen(false); };
 
-  const handleAddTransaction = () => {
-    if (title.trim() === "") return alert("내용을 입력해주세요.");
-    if (category.trim() === "") return alert("카테고리를 입력해주세요.");
+  const handleAddTransaction = async () => {
+    if (title.trim() === "")                         return alert("내용을 입력해주세요.");
+    if (category.trim() === "")                      return alert("카테고리를 입력해주세요.");
     if (amount.trim() === "" || Number(amount) <= 0) return alert("금액을 올바르게 입력해주세요.");
-    const newTransaction: Transaction = {
-      id: Date.now(), type, title, category,
-      amount: Number(amount),
-      date: new Date().toISOString().slice(0, 10),
-      payment: payment.trim() === "" ? "-" : payment,
-      memo: memo.trim() === "" ? "-" : memo,
-    };
+
+    const res = await fetch("/api/transactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type,
+        title,
+        category,
+        amount: Number(amount),
+        date: new Date().toISOString().slice(0, 10),
+        payment: payment.trim() === "" ? "-" : payment,
+        memo: memo.trim() === "" ? "-" : memo,
+      }),
+    });
+
+    if (!res.ok) return alert("저장에 실패했습니다.");
+
+    const newTransaction = await res.json();
     setTransactions((prev) => [newTransaction, ...prev]);
     resetAddForm();
     setIsAddModalOpen(false);
   };
 
-  const handleDeleteTransaction = (id: number) => {
+  const handleDeleteTransaction = async (id: number) => {
+    const res = await fetch(`/api/transactions?id=${id}`, { method: "DELETE" });
+    if (!res.ok) return alert("삭제에 실패했습니다.");
     setTransactions((prev) => prev.filter((item) => item.id !== id));
   };
 
   return (
     <div className="flex min-h-screen bg-slate-50">
-      {/* 메인 영역 */}
       <section className="flex-1 min-w-0 px-8 py-8 space-y-6">
-        {/* 상단 헤더 */}
         <div className="flex items-center justify-between">
           <h1 className="text-4xl font-bold text-slate-900">가계부</h1>
           <div className="flex items-center gap-6 text-slate-600">
@@ -163,7 +127,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* 필터 + 내역 추가 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button className="flex h-12 items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 text-base font-semibold text-slate-700 shadow-sm">
@@ -185,7 +148,6 @@ export default function HomePage() {
           </button>
         </div>
 
-        {/* 수입 / 지출 / 잔액 카드 */}
         <div className="grid grid-cols-3 gap-5">
           <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-7 flex items-center justify-between">
@@ -242,7 +204,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* 거래 내역 테이블 */}
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-6 py-5">
             <h2 className="text-xl font-bold text-slate-900">거래 내역</h2>
@@ -262,7 +223,9 @@ export default function HomePage() {
                 </tr>
               </thead>
               <tbody className="text-sm">
-                {transactions.length === 0 ? (
+                {isLoading ? (
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400">불러오는 중...</td></tr>
+                ) : transactions.length === 0 ? (
                   <tr><td colSpan={8} className="px-5 py-12 text-center text-slate-400">아직 등록된 내역이 없습니다.</td></tr>
                 ) : (
                   transactions.map((item) => (
@@ -315,16 +278,14 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 오른쪽 패널 */}
       <HomeRight
         totalExpense={totalExpense}
-        monthlyBudget={monthlyBudget}
+        monthlyBudget={MONTHLY_BUDGET}
         budgetUsagePercent={budgetUsagePercent}
         categorySummaries={categorySummaries}
         donutGradient={donutGradient}
       />
 
-      {/* 내역 추가 모달 */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-[460px] rounded-2xl bg-white p-6 shadow-xl">
@@ -336,15 +297,15 @@ export default function HomePage() {
               <div>
                 <p className="mb-2 text-sm font-semibold text-slate-700">구분</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => setType("income")} className={`rounded-xl border py-3 text-sm font-semibold ${type === "income" ? "border-blue-600 bg-blue-50 text-blue-600" : "border-slate-200 text-slate-500"}`}>수입</button>
-                  <button type="button" onClick={() => setType("expense")} className={`rounded-xl border py-3 text-sm font-semibold ${type === "expense" ? "border-red-500 bg-red-50 text-red-500" : "border-slate-200 text-slate-500"}`}>지출</button>
+                  <button type="button" onClick={() => setType("income")}  className={`rounded-xl border py-3 text-sm font-semibold ${type === "income"  ? "border-blue-600 bg-blue-50 text-blue-600" : "border-slate-200 text-slate-500"}`}>수입</button>
+                  <button type="button" onClick={() => setType("expense")} className={`rounded-xl border py-3 text-sm font-semibold ${type === "expense" ? "border-red-500 bg-red-50 text-red-500"   : "border-slate-200 text-slate-500"}`}>지출</button>
                 </div>
               </div>
               {[
-                { label: "내용", value: title, setter: setTitle, placeholder: "예: 점심 식사" },
+                { label: "내용",     value: title,    setter: setTitle,    placeholder: "예: 점심 식사" },
                 { label: "카테고리", value: category, setter: setCategory, placeholder: "예: 식비" },
-                { label: "결제수단", value: payment, setter: setPayment, placeholder: "예: 토스카드, 계좌이체" },
-                { label: "메모", value: memo, setter: setMemo, placeholder: "예: 회사 근처 점심" },
+                { label: "결제수단", value: payment,  setter: setPayment,  placeholder: "예: 토스카드, 계좌이체" },
+                { label: "메모",     value: memo,     setter: setMemo,     placeholder: "예: 회사 근처 점심" },
               ].map(({ label, value, setter, placeholder }) => (
                 <div key={label}>
                   <label className="mb-2 block text-sm font-semibold text-slate-700">{label}</label>
@@ -356,9 +317,9 @@ export default function HomePage() {
                 <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" placeholder="예: 12000" className="h-12 w-full rounded-xl border border-slate-200 px-4 text-sm outline-none focus:border-blue-500" />
               </div>
               <div className="flex gap-3 pt-3">
-                <button onClick={handleCloseAddModal} className="h-12 flex-1 rounded-xl border border-slate-200 font-semibold text-slate-600 hover:bg-slate-50">취소</button>
+                <button onClick={handleCloseAddModal}  className="h-12 flex-1 rounded-xl border border-slate-200 font-semibold text-slate-600 hover:bg-slate-50">취소</button>
                 <button onClick={handleAddTransaction} className="h-12 flex-1 rounded-xl bg-blue-600 font-semibold text-white hover:bg-blue-700">저장</button>
-            </div>
+              </div>
             </div>
           </div>
         </div>
